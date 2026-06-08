@@ -51,14 +51,14 @@ class HMMClassifier:
     - Vergleiche verschiedene Modellkonfigurationen
 
     """
-    
+
     def __init__(self, n_states: int = 5, n_iter: int = 100):
         self.n_states = n_states
         self.n_iter = n_iter
         self.models = {}
         self.classes = []
 
-    def fit(self):
+    def fit(self, sequences: list, labels: list):
         """
         TODO: Trainiere den Klassifikator
 
@@ -101,7 +101,7 @@ class HMMClassifier:
         """
         pass
 
-    def decision_function(self):
+    def decision_function(self, sequence):
         """
         TODO: Berechne Scores für jede Klasse
 
@@ -139,7 +139,7 @@ class HMMClassifier:
         """
         pass
 
-    def predict(self):
+    def predict(self, sequence):
         """
         TODO: Sage Klassenlabels voraus
 
@@ -171,4 +171,11 @@ class HMMClassifier:
         labels : list
             Vorhergesagte Labels
         """
+        pass
+
+    def save(self, path: str):
+        pass
+
+    @classmethod
+    def load(cls, path: str):
         pass
