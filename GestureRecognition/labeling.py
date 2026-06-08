@@ -1,5 +1,6 @@
 import pickle
 from pathlib import Path
+import time
 
 
 def data_labeling(times: int, label: str):
@@ -90,6 +91,34 @@ def extract_trajectory(pkl_path, finger_idx=8):
         trajectory.append((tip.x, tip.y))
     return trajectory
 
+def clean_recording(rec):
+    """Schneidet Frames ohne erkannte Hand am Anfang und Ende weg."""
+    frames = rec["detector"]
+
+    # Für jeden Frame: war eine Hand drin? (True/False)
+    has_hand = [bool(f["detector"].hand_landmarks) for f in frames]
+
+    if not any(has_hand):
+        return None  # gar keine Hand -> unbrauchbare Aufnahme
+
+    start = has_hand.index(True)                              # erster Frame mit Hand
+    end = len(has_hand) - 1 - has_hand[::-1].index(True)      # letzter Frame mit Hand
+
+    cleaned_frames = frames[start:end + 1]
+    return {"detector": cleaned_frames}
+
+
+def save_recording(rec, label, base_dir="data/recordings"):
+    """Speichert eine Aufnahme als <LABEL>/<label>-<zeitstempel>.pkl"""
+    label_dir = Path(base_dir) / label
+    label_dir.mkdir(parents=True, exist_ok=True)   # Ordner anlegen, falls nicht da
+
+    path = label_dir / f"{label}-{time.time()}.pkl"
+    with open(path, "wb") as f:
+        pickle.dump(rec, f)
+
+    return path
+    
 
 def dataset_building(output_path):
     """
