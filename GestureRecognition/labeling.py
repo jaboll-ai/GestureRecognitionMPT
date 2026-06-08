@@ -1,3 +1,7 @@
+import pickle
+from pathlib import Path
+
+
 def data_labeling(times: int, label: str):
     """
     TODO: data_labeling: Datenerfassung für Gesten (SignalHub)
@@ -73,7 +77,18 @@ def data_labeling(times: int, label: str):
     """
     pass
 
+def extract_trajectory(pkl_path, finger_idx=8):
+    with open(pkl_path, "rb") as f:
+        rec = pickle.load(f)
 
+    trajectory = []
+    for frame in rec["detector"]:
+        result = frame["detector"]
+        if not result.hand_landmarks:
+            continue
+        tip = result.hand_landmarks[0][finger_idx]
+        trajectory.append((tip.x, tip.y))
+    return trajectory
 
 
 def dataset_building(output_path):
@@ -145,4 +160,21 @@ def dataset_building(output_path):
     output_path : Path or str
         Zielpfad für den erzeugten Trainingsdatensatz.
     """
-    pass
+    
+    recordings_dir = Path("data/recordings")
+
+    sequences = []
+    labels = []
+
+    for pkl_file in sorted(recordings_dir.glob("*/*.pkl")):
+        label = pkl_file.parent.name
+        trajectory = extract_trajectory(pkl_file)
+
+        if len(trajectory) < 2:
+            continue
+
+        sequences.append(trajectory)
+        labels.append(label)
+
+    print(f"{len(sequences)} Sequenzen geladen, Klassen: {sorted(set(labels))}")
+    return sequences, labels
