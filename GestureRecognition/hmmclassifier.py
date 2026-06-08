@@ -51,6 +51,12 @@ class HMMClassifier:
     - Vergleiche verschiedene Modellkonfigurationen
 
     """
+    
+    def __init__(self, n_states: int = 5, n_iter: int = 100):
+        self.n_states = n_states
+        self.n_iter = n_iter
+        self.models = {}
+        self.classes = []
 
     def fit(self):
         """
