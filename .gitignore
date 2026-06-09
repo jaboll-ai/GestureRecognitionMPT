@@ -1,15 +1,48 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
 
-# Virtual environments
-.venv
+# Virtual Environment
+.venv/
+venv/
+env/
 
-# Other
-data
-.training.py
+# uv
+# uv.lock NICHT ignorieren - die soll committet werden!
+
+# IDE / Editor
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+**/.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# iCloud Duplicates
+* 2.*
+* 2/
+
+# Projektspezifisch: Daten nicht committen
+data/
+*.pkl
+
+# Sphinx-Build-Output
+docs/_build/
+docs/build/
+
+# Logs
+*.log

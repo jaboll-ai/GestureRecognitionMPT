@@ -1,3 +1,4 @@
+import numpy as np
 from SignalHub import GALY, get_nested_key, Module
 from collections import deque
 
@@ -104,6 +105,13 @@ class Preprocessor(Module):
         dict
             Ein leeres Dictionary.
         """
+        config = data["config"]
+        self.finger_idx = get_nested_key(config, "preprocessor", "finger_idx")
+        self.buffer_size = get_nested_key(config, "preprocessor", "buffer_size")
+        self.max_lost = get_nested_key(config, "preprocessor", "max_lost")
+        self.min_steps = get_nested_key(config, "preprocessor", "min_steps")
+        self.trajectory = deque(maxlen=self.buffer_size)
+        self.lost_count = 0
         return {}
 
     def step(self, data):
@@ -164,7 +172,30 @@ class Preprocessor(Module):
 
             ``return {outputSignal: trajectory}``
         """
-        return {}
+        result = data["detector"]
+
+        if not result.hand_landmarks:
+            self.lost_count += 1
+            if self.lost_count > self.max_lost:
+                self.trajectory.clear()
+            return {"preprocessor": None}
+
+        self.lost_count = 0
+        tip = result.hand_landmarks[0][self.finger_idx]
+        self.trajectory.append((tip.x, tip.y))
+
+        if len(self.trajectory) < self.min_steps:
+            return {"preprocessor": None}
+
+        traj = np.array(self.trajectory, dtype=np.float32)
+        center = traj.mean(axis=0)
+        traj -= center
+        scale = max(traj[:, 0].max() - traj[:, 0].min(),
+                    traj[:, 1].max() - traj[:, 1].min())
+        if scale > 0:
+            traj /= scale
+
+        return {"preprocessor": traj}
 
     def stop(self, data):
         """
