@@ -12,4 +12,3 @@ wheels/
 # Other
 data
 .training.py
-tests/
