@@ -1,3 +1,5 @@
+import numpy as np
+from scipy.stats import multivariate_normal
 class HMMClassifier:
     """
     TODO: Implementiere einen HMM-basierten Klassifikator
@@ -57,6 +59,26 @@ class HMMClassifier:
         self.n_iter = n_iter
         self.models = {}
         self.classes = []
+
+    def forward(self, sequence, A, pi, means, covs) -> float:
+        T = len(sequence)  # Sequenzlänge
+        N = len(pi)        # Anzahl Zustände
+
+        # Emissionswahrscheinlichkeit p(yt|xt) für jeden Zeitschritt und Zustand
+        B = np.array([
+            [multivariate_normal.pdf(sequence[t], means[j], covs[j]) for j in range(N)]
+            for t in range(T)
+        ])  
+
+        alpha = np.zeros((T, N))
+        alpha[0] = pi * B[0]  #Startverteilung * erste Beobachtung
+
+        for t in range(1, T):
+            # Summe über alle Vorgängerzustände
+            alpha[t] = (alpha[t-1] @ A) * B[t]
+
+        # Summe über alle Endzustände → log P(O|λ)
+        return np.log(alpha[-1].sum())
 
     def fit(self, sequences: list, labels: list):
         """
