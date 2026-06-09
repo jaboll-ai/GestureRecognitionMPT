@@ -12,3 +12,4 @@ wheels/
 # Other
 data
 .training.py
+.vscode/
