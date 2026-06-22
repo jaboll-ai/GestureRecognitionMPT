@@ -188,6 +188,7 @@ class HMMClassifier:
         -------
         self
         """
+        sequences = [np.array(seq) for seq in sequences]  # sicherstellen dass alles numpy ist
         self.classes = list(set(labels))
         for klasse in self.classes:
             # alle Sequenzen dieser Klasse rausfiltern
