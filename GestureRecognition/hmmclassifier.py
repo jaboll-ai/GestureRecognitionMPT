@@ -79,6 +79,73 @@ class HMMClassifier:
 
         # Summe über alle Endzustände → log P(O|λ)
         return np.log(alpha[-1].sum())
+    
+    def baum_welch(self, sequences):
+        """Lernt A, pi, means, covs aus Trainingssequenzen einer Klasse."""
+        N = self.n_states
+        n_features = sequences[0].shape[1]  # = 2 (x, y)
+
+        # Parameter zufällig initialisieren
+        A = np.ones((N, N)) / N
+        pi = np.ones(N) / N
+        means = np.random.randn(N, n_features)
+        covs = np.array([np.eye(n_features)] * N)
+
+        for _ in range(self.n_iter):
+
+            # Statistiken zurücksetzen
+            A_num = np.zeros((N, N))
+            pi_num = np.zeros(N)
+            means_num = np.zeros((N, n_features))
+            covs_num = np.zeros((N, n_features, n_features))
+            gamma_sum = np.zeros(N)
+
+            for seq in sequences:
+                T = len(seq)
+
+                # Emissionswahrscheinlichkeiten p(yt|xt)
+                B = np.array([
+                    [multivariate_normal.pdf(seq[t], means[j], covs[j]) for j in range(N)]
+                    for t in range(T)
+                ])
+
+                # Forward
+                alpha = np.zeros((T, N))
+                alpha[0] = pi * B[0]
+                for t in range(1, T):
+                    alpha[t] = (alpha[t-1] @ A) * B[t]
+
+                # Backward 
+                beta = np.ones((T, N))
+                for t in range(T-2, -1, -1):
+                    beta[t] = A @ (B[t+1] * beta[t+1])
+
+                # Gamma: wie wahrscheinlich ist Zustand j zum Zeitpunkt t?
+                gamma = alpha * beta
+                gamma /= gamma.sum(axis=1, keepdims=True)
+
+                # Xi: wie wahrscheinlich ist Übergang i→j zum Zeitpunkt t?
+                xi = np.zeros((T-1, N, N))
+                for t in range(T-1):
+                    xi[t] = alpha[t][:, None] * A * B[t+1] * beta[t+1]
+                    xi[t] /= xi[t].sum()
+
+                # Statistiken aufsammeln
+                pi_num += gamma[0]
+                A_num += xi.sum(axis=0)
+                gamma_sum += gamma.sum(axis=0)
+                for j in range(N):
+                    means_num[j] += (gamma[:, j:j+1] * seq).sum(axis=0)
+                    diff = seq - means[j]
+                    covs_num[j] += (gamma[:, j, None, None] * (diff[:, :, None] * diff[:, None, :])).sum(axis=0)
+
+            # M-Step: Parameter neu berechnen
+            pi = pi_num / pi_num.sum()
+            A = A_num / A_num.sum(axis=1, keepdims=True)
+            means = means_num / gamma_sum[:, None]
+            covs = covs_num / gamma_sum[:, None, None]
+
+        return A, pi, means, covs
 
     def fit(self, sequences: list, labels: list):
         """
