@@ -1,4 +1,4 @@
-from SignalHub import Module, get_nested_key
+from SignalHub import GALY, bgr, Module, get_nested_key
 from collections import deque
 
 class TrailMarker(Module):
@@ -100,62 +100,34 @@ class TrailMarker(Module):
         dict
             Ein leeres Dictionary.
         """
+        config = data["config"]
+        self.finger_idx = get_nested_key(config, "preprocessor", "finger_idx")
+        self.buffer_size = get_nested_key(config, "preprocessor", "buffer_size")
+        self.max_lost = get_nested_key(config, "preprocessor", "max_lost")
+        self.trail = deque(maxlen=self.buffer_size)
+        self.lost_count = 0
+        self.color = bgr("#00FF00")
         return {}
 
     def step(self, data):
-        """
-        Verarbeitung eines einzelnen Frames.
+        result = data["detector"]
+        galy = GALY()
+        galy.layer("trailmarker")
 
-        Ziel ist es, die aktuelle Position eines Fingers zu bestimmen,
-        diese Position in einer Trajektorie zu speichern und daraus
-        eine visuelle Spur zu erzeugen.
+        if not result.hand_landmarks:
+            self.lost_count += 1
+            if self.lost_count > self.max_lost:
+                self.trail.clear()
+            return {"galy": galy}
 
-        Hinweise
-        --------
-        - Greife auf das ``detector`` Signal zu, um erkannte Hände und
-          deren Landmarken zu erhalten.
-        - Falls keine Hand erkannt wurde, kann beispielsweise ein Zähler
-          für verlorene Frames erhöht werden.
-        - Wird eine Hand erkannt, kann die Landmarke des gewünschten
-          Fingers extrahiert werden.
-        - Die Position kann zur bestehenden Trajektorie hinzugefügt werden.
-        - Zwischen aufeinanderfolgenden Punkten können Linien gezeichnet
-          werden, um eine Spur darzustellen.
-        - Für die Visualisierung kann :meth:`line` der :class:`GALY`
-          verwendet werden.
+        self.lost_count = 0
+        tip = result.hand_landmarks[0][self.finger_idx]
+        self.trail.append((tip.x, tip.y))
 
-        .. tip::
-          Typischer Ablauf:
-           1. Landmark extrahieren
-           2. Punkt speichern
-           3. Trajektorie aktualisieren
-           4. Linien zwischen Punkten zeichnen
+        for i in range(1, len(self.trail)):
+            galy.line(self.trail[i - 1], self.trail[i], self.color, 2)
 
-        .. warning::
-            Achte darauf, dass:
-              - keine leeren Landmark-Daten verarbeitet werden
-              - die Trajektorie nicht unendlich wächst
-              - verlorene Frames sinnvoll behandelt werden
-
-        Parameters
-        ----------
-        data : dict
-            Enthält unter anderem:
-
-            - ``detector`` : erkannte Hände und Landmarken
-            - ``config`` : Systemkonfiguration
-
-        Returns
-        -------
-        dict
-            Um die Zeichenoperationen auszuführen, sollte ein
-            :class:`GALY` Objekt zurückgegeben werden.
-
-            Beispiel:
-
-            ``return { ..., "galy": galy}``
-        """
-        return {}
+        return {"galy": galy}
 
     def stop(self, data):
         """
