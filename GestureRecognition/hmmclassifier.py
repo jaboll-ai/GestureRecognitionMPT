@@ -188,7 +188,15 @@ class HMMClassifier:
         -------
         self
         """
-        pass
+        self.classes = list(set(labels))
+        for klasse in self.classes:
+            # alle Sequenzen dieser Klasse rausfiltern
+            klasse_seqs = [sequences[i] for i in range(len(labels)) if labels[i] == klasse]
+            # HMM für diese Klasse trainieren
+            A, pi, means, covs = self.baum_welch(klasse_seqs)
+            # Modell speichern
+            self.models[klasse] = {"A": A, "pi": pi, "means": means, "covs": covs}
+        return self
 
     def decision_function(self, sequence):
         """
@@ -226,7 +234,11 @@ class HMMClassifier:
         scores : array-like
             Score pro Sequenz und Klasse
         """
-        pass
+        # Log-Likelihood für jede Klasse berechnen
+        scores = {}
+        for klasse, model in self.models.items():
+            scores[klasse] = self.forward(sequence, model["A"], model["pi"], model["means"], model["covs"])
+        return scores
 
     def predict(self, sequence):
         """
@@ -260,7 +272,9 @@ class HMMClassifier:
         labels : list
             Vorhergesagte Labels
         """
-        pass
+        scores = self.decision_function(sequence)
+        # Klasse mit höchstem Score zurückgeben
+        return max(scores, key=scores.get)
 
     def save(self, path: str):
         pass
