@@ -1,4 +1,20 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
 def visualize_dataset():
+
+    sequences = [np.random.randn(30,2) for _ in range(10)]
+    labels = ["A"]* 5 + ["B"] * 5 
+    classes = sorted(set(labels))
+    fig, axes = plt.subplots(1, len(classes), figsize=(5* len(classes), 4))
+    for i, cls in enumerate (classes):
+        ax = axes[i]
+        for seq, lbl in zip(sequences, labels):
+            if lbl == cls:
+                ax.plot(seq[:,0], seq[:,1])
+        ax.set_title(f"Klasse {cls}")
+    
+    plt.show()
     """
     TODO: Visualisierung des eigenen Datensatzes
 
@@ -48,7 +64,7 @@ def visualize_dataset():
     - Mittelwerte oder typische Sequenzen pro Klasse darstellen
     - Ausreißer automatisch erkennen
     """
-    pass
+
 
 def evaluate_classifier():
     """
@@ -101,7 +117,7 @@ def evaluate_classifier():
     - Weitere Metriken (Precision, Recall, F1)
     - Vergleich verschiedener Modelle
     """
-    pass
+
 
 
 def replay_recordings():
