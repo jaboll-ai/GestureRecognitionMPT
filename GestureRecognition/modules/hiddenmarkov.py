@@ -1,5 +1,5 @@
 from SignalHub import GALY, bgr, get_nested_key, Module
-from hmmclassifier import HMMClassifier
+from GestureRecognition.hmmclassifier import HMMClassifier
 
 class HMMModule(Module):
     
