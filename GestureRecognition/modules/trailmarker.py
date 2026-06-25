@@ -103,11 +103,10 @@ class TrailMarker(Module):
         """
         config = data["config"]
         self.finger_idx = get_nested_key("preprocessor.finger_idx", config)
-        self.buffer_size = get_nested_key("preprocessor.buffer_size", config)
         self.max_lost = get_nested_key("preprocessor.max_lost", config)
-        self.trail = deque(maxlen=self.buffer_size)
+        self.trail = deque(maxlen=120)
         self.lost_count = 0
-        self.color = bgr("#00FF00")
+        self.color = bgr("#FFFF00")
 
         W = get_nested_key("webcam.width", config) or 640
         H = get_nested_key("webcam.height", config) or 360
@@ -131,7 +130,7 @@ class TrailMarker(Module):
         self.trail.append((tip.x, tip.y))
 
         for i in range(1, len(self.trail)):
-            galy.line(self.trail[i - 1], self.trail[i], self.color, 2)
+            galy.line(self.trail[i - 1], self.trail[i], self.color, 3)
 
         return {"galy": galy}
 
