@@ -1,3 +1,4 @@
+import numpy as np
 from SignalHub import GALY, bgr, Module, get_nested_key
 from collections import deque
 
@@ -101,20 +102,25 @@ class TrailMarker(Module):
             Ein leeres Dictionary.
         """
         config = data["config"]
-        self.finger_idx = get_nested_key(config, "preprocessor", "finger_idx")
-        self.buffer_size = get_nested_key(config, "preprocessor", "buffer_size")
-        self.max_lost = get_nested_key(config, "preprocessor", "max_lost")
+        self.finger_idx = get_nested_key("preprocessor.finger_idx", config)
+        self.buffer_size = get_nested_key("preprocessor.buffer_size", config)
+        self.max_lost = get_nested_key("preprocessor.max_lost", config)
         self.trail = deque(maxlen=self.buffer_size)
         self.lost_count = 0
         self.color = bgr("#00FF00")
+
+        W = get_nested_key("webcam.width", config) or 640
+        H = get_nested_key("webcam.height", config) or 360
+        self.mapping = np.array([[W, 0, 0], [0, H, 0]], dtype=np.float64)
         return {}
 
     def step(self, data):
         result = data["detector"]
         galy = GALY()
         galy.layer("trailmarker")
+        galy.set_layer_affine_mapping(self.mapping)
 
-        if not result.hand_landmarks:
+        if result is None or not result.hand_landmarks:
             self.lost_count += 1
             if self.lost_count > self.max_lost:
                 self.trail.clear()

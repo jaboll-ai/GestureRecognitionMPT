@@ -40,6 +40,9 @@ Desktop.ini
 data/
 *.pkl
 
+# MediaPipe-Modell (wird automatisch heruntergeladen)
+*.task
+
 # Sphinx-Build-Output
 docs/_build/
 docs/build/
