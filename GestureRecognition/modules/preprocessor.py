@@ -106,10 +106,10 @@ class Preprocessor(Module):
             Ein leeres Dictionary.
         """
         config = data["config"]
-        self.finger_idx = get_nested_key(config, "preprocessor", "finger_idx")
-        self.buffer_size = get_nested_key(config, "preprocessor", "buffer_size")
-        self.max_lost = get_nested_key(config, "preprocessor", "max_lost")
-        self.min_steps = get_nested_key(config, "preprocessor", "min_steps")
+        self.finger_idx = get_nested_key("preprocessor.finger_idx", config)
+        self.buffer_size = get_nested_key("preprocessor.buffer_size", config)
+        self.max_lost = get_nested_key("preprocessor.max_lost", config)
+        self.min_steps = get_nested_key("preprocessor.min_steps", config)
         self.trajectory = deque(maxlen=self.buffer_size)
         self.lost_count = 0
         return {}
@@ -174,7 +174,7 @@ class Preprocessor(Module):
         """
         result = data["detector"]
 
-        if not result.hand_landmarks:
+        if result is None or not result.hand_landmarks:
             self.lost_count += 1
             if self.lost_count > self.max_lost:
                 self.trajectory.clear()

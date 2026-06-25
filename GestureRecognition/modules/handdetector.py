@@ -130,6 +130,22 @@ class HandDetector(Module):
         dict
             Ein leeres Dictionary.
         """
+        import urllib.request, os
+        model_path = "hand_landmarker.task"
+        if not os.path.exists(model_path):
+            urllib.request.urlretrieve(
+                "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+                model_path,
+            )
+        options = vision.HandLandmarkerOptions(
+            base_options=python.BaseOptions(model_asset_path=model_path),
+            num_hands=1,
+        )
+        self.landmarker = vision.HandLandmarker.create_from_options(options)
+
+        W = get_nested_key("config.webcam.width", data) or 640
+        H = get_nested_key("config.webcam.height", data) or 360
+        self.mapping = np.array([[W, 0, 0], [0, H, 0]], dtype=np.float64)
         return {}
 
     def step(self, data):
@@ -184,7 +200,20 @@ class HandDetector(Module):
 
             ``return {outputSignal: result, "galy": galy}``
         """
-        return {}
+        frame = data["webcam"]
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self.landmarker.detect(mp_image)
+
+        galy = GALY()
+        galy.layer("detector")
+        galy.set_layer_affine_mapping(self.mapping)
+
+        if result.hand_landmarks:
+            for hand in result.hand_landmarks:
+                draw_hand_landmarks(hand, galy)
+
+        return {"detector": result, "galy": galy}
 
     def stop(self, data):
         """
@@ -206,4 +235,5 @@ class HandDetector(Module):
         data : dict
             Letzte übergebene Daten des Frameworks.
         """
-        pass
+        if hasattr(self, "landmarker") and self.landmarker:
+            self.landmarker.close()
