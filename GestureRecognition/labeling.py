@@ -1,6 +1,7 @@
 import pickle
 from pathlib import Path
-import time
+from datetime import datetime
+import numpy as np
 import subprocess
 import sys
 import os
@@ -67,10 +68,7 @@ def data_labeling(times: int, label: str):
 
     print(f"\nFertig! {saved} Aufnahmen für '{label}' gespeichert.")
 
-def extract_trajectory(pkl_path, finger_idx=8):
-    with open(pkl_path, "rb") as f:
-        rec = pickle.load(f)
-
+def extract_trajectory(rec, finger_idx=8):
     trajectory = []
     for frame in rec["detector"]:
         result = frame["detector"]
@@ -79,6 +77,17 @@ def extract_trajectory(pkl_path, finger_idx=8):
         tip = result.hand_landmarks[0][finger_idx]
         trajectory.append((tip.x, tip.y))
     return trajectory
+
+
+def normalize_trajectory(trajectory):
+    traj = np.array(trajectory, dtype=np.float32)
+    center = traj.mean(axis=0)
+    traj -= center
+    scale = max(traj[:, 0].max() - traj[:, 0].min(),
+                traj[:, 1].max() - traj[:, 1].min())
+    if scale > 0:
+        traj /= scale
+    return traj
 
 def clean_recording(rec):
     """Schneidet Frames ohne erkannte Hand am Anfang und Ende weg."""
@@ -98,13 +107,19 @@ def clean_recording(rec):
 
 
 def save_recording(rec, label, base_dir="data/recordings"):
-    """Speichert eine Aufnahme als <LABEL>/<label>-<zeitstempel>.pkl"""
-    label_dir = Path(base_dir) / label
-    label_dir.mkdir(parents=True, exist_ok=True)   # Ordner anlegen, falls nicht da
+    """Extrahiert Trajektorie, normalisiert und speichert als .npy (T, 2) float32."""
+    trajectory = extract_trajectory(rec)
+    if len(trajectory) < 2:
+        return None
 
-    path = label_dir / f"{label}-{time.time()}.pkl"
-    with open(path, "wb") as f:
-        pickle.dump(rec, f)
+    traj = normalize_trajectory(trajectory)
+
+    label_dir = Path(base_dir) / label
+    label_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = label_dir / f"{timestamp}.npy"
+    np.save(path, traj)
 
     return path
     
@@ -184,14 +199,14 @@ def dataset_building(output_path):
     sequences = []
     labels = []
 
-    for pkl_file in sorted(recordings_dir.glob("*/*.pkl")):
-        label = pkl_file.parent.name
-        trajectory = extract_trajectory(pkl_file)
+    for npy_file in sorted(recordings_dir.glob("*/*.npy")):
+        label = npy_file.parent.name
+        traj = np.load(npy_file)
 
-        if len(trajectory) < 2:
+        if traj.shape[0] < 2:
             continue
 
-        sequences.append(trajectory)
+        sequences.append(traj)
         labels.append(label)
 
     print(f"{len(sequences)} Sequenzen geladen, Klassen: {sorted(set(labels))}")
