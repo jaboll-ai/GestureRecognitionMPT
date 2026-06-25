@@ -7,7 +7,7 @@ import os
 
 
 def data_labeling(times: int, label: str):
-    “””
+    """
     Datenerfassung für Gesten über SignalHub.
 
     Startet SignalHub im Record-Modus, nimmt Gesten auf und speichert
@@ -18,51 +18,54 @@ def data_labeling(times: int, label: str):
     times : int
         Anzahl der zu speichernden Aufnahmen.
     label : str
-        Name der Geste / Klasse (z. B. “A”, “B”).
-    “””
-    temp_file = os.path.join(“data”, “temp_recording.pkl”)
+        Name der Geste / Klasse (z. B. "A", "B").
+    """
+    temp_file = os.path.join("data", "temp_recording.pkl")
     saved = 0
     attempt = 0
 
-    print(f”Starte Aufnahme-Session für Geste '{label}' ({times} Aufnahmen)”)
-    print(“Steuerung: Geste vor Kamera ausführen, Fenster schließen.”)
-    print(“           j = speichern, n = verwerfen, q = abbrechen\n”)
+    print(f"Starte Aufnahme-Session für Geste '{label}' ({times} Aufnahmen)")
+    print("Steuerung: Geste vor Kamera ausführen, Fenster schließen.")
+    print("           j = speichern, n = verwerfen, q = abbrechen\n")
 
     while saved < times:
         attempt += 1
-        print(f”--- Aufnahme {saved + 1}/{times} (Versuch {attempt}) ---”)
+        print(f"--- Aufnahme {saved + 1}/{times} (Versuch {attempt}) ---")
 
-        subprocess.run([
-            sys.executable, “main.py”,
-            “--mode”, “record”,
-            “--recorder.file”, temp_file,
-        ])
+        result = subprocess.run(
+            [sys.executable, "main.py",
+             "--mode", "record",
+             "--recorder.file", temp_file],
+        )
+        if result.returncode != 0:
+            print("FEHLER beim Starten von SignalHub (siehe Ausgabe oben).")
+            break
 
         if not os.path.exists(temp_file):
-            print(“Keine Aufnahme gefunden — erneut versuchen.\n”)
+            print("Keine Aufnahme gefunden — erneut versuchen.\n")
             continue
 
-        with open(temp_file, “rb”) as f:
+        with open(temp_file, "rb") as f:
             rec = pickle.load(f)
         os.remove(temp_file)
 
         cleaned = clean_recording(rec)
         if cleaned is None:
-            print(“Keine Hand erkannt — Aufnahme verworfen.\n”)
+            print("Keine Hand erkannt — Aufnahme verworfen.\n")
             continue
 
-        choice = input(“Speichern? (j/n/q): “).strip().lower()
-        if choice == “q”:
-            print(“Aufnahme-Session abgebrochen.”)
+        choice = input("Speichern? (j/n/q): ").strip().lower()
+        if choice == "q":
+            print("Aufnahme-Session abgebrochen.")
             break
-        elif choice == “j”:
+        elif choice == "j":
             path = save_recording(cleaned, label)
             saved += 1
-            print(f”Gespeichert: {path} ({saved}/{times})\n”)
+            print(f"Gespeichert: {path} ({saved}/{times})\n")
         else:
-            print(“Aufnahme verworfen.\n”)
+            print("Aufnahme verworfen.\n")
 
-    print(f”\nFertig! {saved} Aufnahmen für '{label}' gespeichert.”)
+    print(f"\nFertig! {saved} Aufnahmen für '{label}' gespeichert.")
 
 def extract_trajectory(pkl_path, finger_idx=8):
     with open(pkl_path, "rb") as f:
@@ -150,7 +153,7 @@ def dataset_building(output_path):
 
     .. note::
 
-       Es gibt hier keine vorgegebene „richtige“ Lösung.
+       Es gibt hier keine vorgegebene „richtige" Lösung.
        Wichtig ist, dass dein Datensatz konsistent und nutzbar ist.
 
     .. tip::
