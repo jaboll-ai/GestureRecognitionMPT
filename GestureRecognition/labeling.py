@@ -1,82 +1,68 @@
 import pickle
 from pathlib import Path
 import time
+import subprocess
+import sys
+import os
 
 
 def data_labeling(times: int, label: str):
-    """
-    TODO: data_labeling: Datenerfassung für Gesten (SignalHub)
+    “””
+    Datenerfassung für Gesten über SignalHub.
 
-    Ziel:
-    -----
-    Implementiere eine Funktion, mit der Trainingsdaten für eine bestimmte
-    Geste aufgenommen und gespeichert werden können.
-
-    Anforderungen / Ideen:
-    ----------------------
-
-    1. Aufnahme starten
-
-       - Starte SignalHub über einen Subprocess mit ``--mode record``
-       - Übergib einen Dateipfad für die Aufnahme ``--recorder <path_to_save_recording_at>.pkl``
-       - Überlege, welche Module aufgenommen werden sollen
-       - Nimm entsprechende Änderungen in der ``config.yaml`` vor
-
-    2. Interaktive Steuerung (optional)
-
-       - Implementiere eine einfache Benutzerinteraktion:
-         - Aufnahme speichern
-         - Aufnahme verwerfen
-         - Programm beenden
-
-    .. tip::
-
-       Die Funktion ``getch()`` (Aus dem Modul Linux :mod:`getch` oder bei Windows :mod:`msvcrt`) ist sehr hilfreich, um einzelne Tastendrücke
-       direkt auszulesen (ohne Enter). Damit kannst du dir ein schnelles
-       Labeling-Interface bauen.
-
-       Beispiel:
-
-       .. code-block:: text
-
-           ESC → speichern
-           andere Taste → verwerfen
-
-    3. Daten sichten und bereinigen
-
-       - Lade die aufgenommenen Daten
-       - Überlege:
-         - Welche Teile sind relevant?
-         - Welche Frames sind leer oder unbrauchbar?
-         - Sollten gewisse Sequenzen evtl. gar nicht benutzt werden?
-       - Entferne unnötige Anteile (z. B. keine erkannte Hand am Anfang/Ende)
-
-    4. Speicherung
-
-       - Speichere Daten strukturiert nach Labels (z. B. Ordnerstruktur)
-       - Jede Aufnahme sollte einzeln gespeichert werden
-
-    .. note::
-
-       Die konkrete Umsetzung (Dateiformat, Struktur, Ablauf) ist bewusst offen.
-       Entwickle ein System, das für dich sinnvoll ist und sich gut weiterverarbeiten lässt.
-
-    .. warning::
-
-       Ziel ist nicht nur, dass es „funktioniert“, sondern ein sauberer und
-       effizienter Workflow für Datensammlung.
+    Startet SignalHub im Record-Modus, nimmt Gesten auf und speichert
+    sie nach Bereinigung strukturiert nach Label.
 
     Parameters
     ----------
     times : int
-        Wie viele Aufnahmen gemacht werden sollen.
-        Kann frei angepasst werden (z. B. Endlosschleife oder interaktive Steuerung).
-
+        Anzahl der zu speichernden Aufnahmen.
     label : str
-        Name der Geste / Klasse.
-        Kann ebenfalls frei gestaltet werden (z. B. dynamische Labels, mehrere Klassen gleichzeitig).
-    """
-    pass
+        Name der Geste / Klasse (z. B. “A”, “B”).
+    “””
+    temp_file = os.path.join(“data”, “temp_recording.pkl”)
+    saved = 0
+    attempt = 0
+
+    print(f”Starte Aufnahme-Session für Geste '{label}' ({times} Aufnahmen)”)
+    print(“Steuerung: Geste vor Kamera ausführen, Fenster schließen.”)
+    print(“           j = speichern, n = verwerfen, q = abbrechen\n”)
+
+    while saved < times:
+        attempt += 1
+        print(f”--- Aufnahme {saved + 1}/{times} (Versuch {attempt}) ---”)
+
+        subprocess.run([
+            sys.executable, “main.py”,
+            “--mode”, “record”,
+            “--recorder.file”, temp_file,
+        ])
+
+        if not os.path.exists(temp_file):
+            print(“Keine Aufnahme gefunden — erneut versuchen.\n”)
+            continue
+
+        with open(temp_file, “rb”) as f:
+            rec = pickle.load(f)
+        os.remove(temp_file)
+
+        cleaned = clean_recording(rec)
+        if cleaned is None:
+            print(“Keine Hand erkannt — Aufnahme verworfen.\n”)
+            continue
+
+        choice = input(“Speichern? (j/n/q): “).strip().lower()
+        if choice == “q”:
+            print(“Aufnahme-Session abgebrochen.”)
+            break
+        elif choice == “j”:
+            path = save_recording(cleaned, label)
+            saved += 1
+            print(f”Gespeichert: {path} ({saved}/{times})\n”)
+        else:
+            print(“Aufnahme verworfen.\n”)
+
+    print(f”\nFertig! {saved} Aufnahmen für '{label}' gespeichert.”)
 
 def extract_trajectory(pkl_path, finger_idx=8):
     with open(pkl_path, "rb") as f:
