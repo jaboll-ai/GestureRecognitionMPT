@@ -1,180 +1,156 @@
-from SignalHub import Module, get_nested_key
+from SignalHub import Module, GALY, get_nested_key
 from collections import deque
 
+
 class TrailMarker(Module):
-    """
-    Modul zum Zeichnen einer Spur anhand der Bewegung eines Fingers.
-
-    Die Position eines bestimmten Finger-Landmarks wird über mehrere Frames
-    hinweg gespeichert. Aus diesen Punkten kann anschließend eine Linie
-    erzeugt werden, die den Bewegungsverlauf des Fingers visualisiert.
-
-    Ziel ist es, die Verarbeitung der Landmark-Daten sowie die Verwaltung
-    eines Zustands über mehrere Frames hinweg selbst zu implementieren.
-    """
 
     def __init__(self, outputSignal="trailmarker"):
-        """
-        Konstruktor des Moduls.
+        self.outputSignal = outputSignal
 
-        Ziel ist es, das Modul beim Framework korrekt zu registrieren.
-
-        Hinweise
-        --------
-        - Ein Modul muss definieren, **welche Signale es empfangen möchte**.
-        - Diese werden über ``inputSignals`` angegeben.
-        - Nur Signale, die hier subscribed werden, erscheinen später im
-          ``data`` Dictionary der Methoden :meth:`start` und :meth:`step`.
-
-        Für dieses Modul werden unter anderem folgende Signale benötigt:
-
-        - ``config`` : Systemkonfiguration
-        - ``detector`` : Ergebnisse der Handdetektion
-
-        Zusätzlich muss ein **Output-Schema** definiert werden.
-
-        Output Schema
-        -------------
-        Da dieses Modul keine eigenen Daten erzeugt, reicht beispielsweise:
-
-        ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
-
-        .. note::
-           Die Basisklasse :class:`Module` erwartet beim Aufruf von
-           ``super().__init__`` unter anderem:
-
-           - ``inputSignals``
-           - ``outputSchema``
-           - ``name`` des Moduls
-
-        Parameters
-        ----------
-        outputSignal : str, optional
-            Name des erzeugten Output-Signals.
-        """
         super().__init__(
             inputSignals=["config", "detector"],
-            outputSchema={"type": "object", "properties": {outputSignal: {}}},
+            outputSchema={
+                "type": "object",
+                "properties": {
+                    outputSignal: {},
+                    "galy": {}
+                },
+                "additionalProperties": True
+            },
             name="trailmarker",
         )
 
     def start(self, data):
-        """
-        Initialisierung des Modulzustands.
 
-        Diese Methode wird einmal beim Start des Moduls ausgeführt.
+        config = data.get("config", {})
 
-        Ziel ist es, alle Variablen vorzubereiten, die während der
-        Laufzeit des Moduls benötigt werden.
+        # ✅ FIX: richtige Reihenfolge (key, data, default)
+        self.finger_index = get_nested_key(
+            "trailmarker.fingerIndex", config, 8
+        )
 
-        Hinweise
-        --------
-        - Lese benötigte Parameter aus der Konfiguration.
-        - Bestimme beispielsweise, welcher Finger verfolgt werden soll.
-        - Lege eine Datenstruktur an, in der mehrere vergangene
-          Fingerpositionen gespeichert werden können,
-          z.B. :class:`collections.deque` mit einer maximalen Größe.
-        - Diese Historie wird später verwendet, um eine Spur zu zeichnen.
-        - Speichere aus der Konfiguration weitere benötigte Parameter,
-          z.B. Finger-Index, maximale Anzahl verlorener Frames oder
-          Webcam-Parameter.
-        - Für den Zugriff auf verschachtelte Konfigurationswerte kann
-          :meth:`get_nested_key` verwendet werden.
+        self.max_points = get_nested_key(
+            "trailmarker.maxPoints", config, 50
+        )
 
-        .. tip::
-           Eine ``deque`` ist ideal für Trajektorien,
-           da sie effizient alte Punkte entfernt.
+        self.max_lost_frames = get_nested_key(
+            "trailmarker.maxLostFrames", config, 10
+        )
 
-        .. note::
-           Initialisiere hier nur Zustände und Parameter,
-           keine eigentliche Verarbeitung.
+        self.trail = deque(maxlen=self.max_points)
+        self.lost_frames = 0
 
-        Parameters
-        ----------
-        data : dict
-            Eingabedaten des Frameworks. Enthält unter anderem das
-            Signal ``config``.
-
-        Returns
-        -------
-        dict
-            Ein leeres Dictionary.
-        """
         return {}
+
+    def _draw_trail(self, galy):
+        # gleiche Pixelauflösung wie handdetector.draw_hand_landmarks
+        width, height = 1280, 720
+        galy.layer("trail")
+        points = list(self.trail)
+        for i in range(len(points) - 1):
+            x1, y1 = points[i]
+            x2, y2 = points[i + 1]
+            pt1 = (int(x1 * width), int(y1 * height))
+            pt2 = (int(x2 * width), int(y2 * height))
+            galy.line(pt1, pt2, (0, 255, 255), 2)
 
     def step(self, data):
-        """
-        Verarbeitung eines einzelnen Frames.
 
-        Ziel ist es, die aktuelle Position eines Fingers zu bestimmen,
-        diese Position in einer Trajektorie zu speichern und daraus
-        eine visuelle Spur zu erzeugen.
+        detector = data.get("detector", None)
 
-        Hinweise
-        --------
-        - Greife auf das ``detector`` Signal zu, um erkannte Hände und
-          deren Landmarken zu erhalten.
-        - Falls keine Hand erkannt wurde, kann beispielsweise ein Zähler
-          für verlorene Frames erhöht werden.
-        - Wird eine Hand erkannt, kann die Landmarke des gewünschten
-          Fingers extrahiert werden.
-        - Die Position kann zur bestehenden Trajektorie hinzugefügt werden.
-        - Zwischen aufeinanderfolgenden Punkten können Linien gezeichnet
-          werden, um eine Spur darzustellen.
-        - Für die Visualisierung kann :meth:`line` der :class:`GALY`
-          verwendet werden.
+        # Jedes zeichnende Modul erzeugt sein eigenes GALY-Objekt (wie
+        # HandDetector) - die Engine benennt "galy"-Signale beim Mergen
+        # automatisch eindeutig um, ein hereingereichtes "galy" aus data
+        # existiert hier nie (TrailMarker abonniert dieses Signal nicht).
+        galy = GALY()
 
-        .. tip::
-          Typischer Ablauf:
-           1. Landmark extrahieren
-           2. Punkt speichern
-           3. Trajektorie aktualisieren
-           4. Linien zwischen Punkten zeichnen
+        # --------------------------------------------------
+        # 1. Hands extrahieren (robust für SignalHub/MediaPipe)
+        # --------------------------------------------------
+        hands = []
 
-        .. warning::
-            Achte darauf, dass:
-              - keine leeren Landmark-Daten verarbeitet werden
-              - die Trajektorie nicht unendlich wächst
-              - verlorene Frames sinnvoll behandelt werden
+        if detector is None:
+            hands = []
+        else:
+            # MediaPipe HandLandmarkerResult
+            if hasattr(detector, "hand_landmarks"):
+                hands = detector.hand_landmarks or []
 
-        Parameters
-        ----------
-        data : dict
-            Enthält unter anderem:
+        # --------------------------------------------------
+        # 2. Keine Hand erkannt
+        # --------------------------------------------------
+        if len(hands) == 0:
+            self.lost_frames += 1
 
-            - ``detector`` : erkannte Hände und Landmarken
-            - ``config`` : Systemkonfiguration
+            if self.lost_frames > self.max_lost_frames:
+                self.trail.clear()
 
-        Returns
-        -------
-        dict
-            Um die Zeichenoperationen auszuführen, sollte ein
-            :class:`GALY` Objekt zurückgegeben werden.
+            self._draw_trail(galy)
 
-            Beispiel:
+            return {
+                self.outputSignal: {
+                    "trail": list(self.trail)
+                },
+                "galy": galy
+            }
 
-            ``return { ..., "galy": galy}``
-        """
-        return {}
+        # --------------------------------------------------
+        # 3. Hand erkannt
+        # --------------------------------------------------
+        self.lost_frames = 0
+
+        hand = hands[0]
+
+        # hand kann dict, Liste von Landmarken (MediaPipe) ODER Objekt sein → absichern
+        if isinstance(hand, dict):
+            landmarks = hand.get("landmarks", [])
+        elif isinstance(hand, (list, tuple)):
+            landmarks = hand
+        else:
+            landmarks = getattr(hand, "landmarks", [])
+
+        if not landmarks or len(landmarks) <= self.finger_index:
+            self._draw_trail(galy)
+            return {
+                self.outputSignal: {
+                    "trail": list(self.trail)
+                },
+                "galy": galy
+            }
+
+        landmark = landmarks[self.finger_index]
+
+        # landmark kann dict ODER object sein
+        if isinstance(landmark, dict):
+            x = landmark.get("x")
+            y = landmark.get("y")
+        else:
+            x = getattr(landmark, "x", None)
+            y = getattr(landmark, "y", None)
+
+        if x is None or y is None:
+            self._draw_trail(galy)
+            return {
+                self.outputSignal: {
+                    "trail": list(self.trail)
+                },
+                "galy": galy
+            }
+
+        # --------------------------------------------------
+        # 4. Trail updaten
+        # --------------------------------------------------
+        point = (x, y)
+        self.trail.append(point)
+
+        self._draw_trail(galy)
+
+        return {
+            self.outputSignal: {
+                "trail": list(self.trail)
+            },
+            "galy": galy
+        }
 
     def stop(self, data):
-        """
-        Wird aufgerufen, wenn das Modul beendet wird.
-
-        Ziel ist es, bei Bedarf Ressourcen freizugeben oder interne
-        Zustände zurückzusetzen.
-
-        Hinweise
-        --------
-        - In vielen Fällen ist keine spezielle Bereinigung notwendig.
-
-        .. note::
-           Diese Methode ist optional, kann aber sinnvoll sein,
-           wenn Zustände explizit zurückgesetzt werden sollen.
-
-        Parameters
-        ----------
-        data : dict
-            Letzte übergebene Daten des Frameworks.
-        """
-        pass
+        self.trail.clear()
