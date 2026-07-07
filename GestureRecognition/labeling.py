@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from GestureRecognition.augmentation import augment_dataset
+from GestureRecognition.augmentation import augment_recording
 
 RAW_DATA_DIR = Path("recordings")
 AUGMENTED_DATA_DIR = Path("recordings_augmented")
@@ -122,6 +122,7 @@ def data_labeling(times: int, label: str, kuerzel: str = None):
     print("ESC = speichern | andere Taste = verwerfen | q = beenden")
 
     saved = 0
+    saved_paths = []
 
     while saved < times:
         timestamp = int(time.time() * 1000)
@@ -162,6 +163,7 @@ def data_labeling(times: int, label: str, kuerzel: str = None):
             if temp_path.exists():
                 shutil.move(str(temp_path), str(final_path))
                 saved += 1
+                saved_paths.append(final_path)
                 print(f"Gespeichert: {final_path}")
             else:
                 print("Keine Aufnahme gefunden.")
@@ -170,14 +172,14 @@ def data_labeling(times: int, label: str, kuerzel: str = None):
                 temp_path.unlink()
             print("Verworfen.")
 
-    if saved > 0:
+    if saved_paths:
         print(f"\nAugmentiere {saved} neue Aufnahme(n) für Klasse '{label}' ...")
-        augment_dataset(
-            input_dir=str(RAW_DATA_DIR),
-            output_dir=str(AUGMENTED_DATA_DIR),
-            n_per_recording=N_AUGMENTATIONS_PER_RECORDING,
-            labels=label,
-        )
+        for path in saved_paths:
+            augment_recording(
+                path,
+                output_dir=str(AUGMENTED_DATA_DIR),
+                n_per_recording=N_AUGMENTATIONS_PER_RECORDING,
+            )
 
 
 def load_recording(path):
