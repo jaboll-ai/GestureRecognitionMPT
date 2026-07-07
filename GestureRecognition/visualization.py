@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from fontTools.misc.classifyTools import Classifier
 from sklearn.metrics import accuracy_score, confusion_matrix
-from hmmclassifier import HMMClassifier
 
 def visualize_dataset(label_pfad, label_name):
     """
@@ -119,7 +118,7 @@ def visualize_dataset(label_pfad, label_name):
     #test_ordner_O = r"C:\Users\Evran\GestureRecognitionMPT\recordings\O"
     #visualize_dataset(test_ordner_O, "Buchstabe O")
 
-def evaluate_classifier(model_path, test_data_path):
+def evaluate_classifier(test_data_path):
     """
     TODO: Evaluation deines Klassifikators
 
@@ -171,33 +170,26 @@ def evaluate_classifier(model_path, test_data_path):
     - Vergleich verschiedener Modelle
     """
     print("Starts evaluation...")
-    print(f"lade modell aus {model_path}")
-    print(f"lade Test daten aus {test_data_path}")
+    print(f"lade Cross-Validation-Ergebnisse aus {test_data_path}")
 
-    classifier = HMMClassifier()
+    # Das finale Modell (model_path) wird auf ALLEN Daten trainiert (siehe
+    # HMMClassifier.fit()), es gibt also keine eigenen Testdaten mehr, auf
+    # denen es fair befragt werden könnte. Die Genauigkeit stammt daher aus
+    # HMMClassifier.cross_validate(), das jede echte Aufnahme einmal mit
+    # einem Modell testet, das diese Aufnahme nicht gesehen hat.
     try:
-        classifier.load_model(model_path)
-        classifier.load_test_data(test_data_path)
+        with open(test_data_path, "rb") as f:
+            cv_results = pickle.load(f)
     except FileNotFoundError:
-        print("Fehler: Konnte Modell oder Testdaten nicht finden.")
+        print("Fehler: Konnte Cross-Validation-Ergebnisse nicht finden.")
         return
 
-    if not classifier.test_data:
+    y_true = cv_results.get("y_true", [])
+    y_pred = cv_results.get("y_pred", [])
+
+    if not y_true:
         print("Fehler: Keine Testdaten geladen!")
         return
-
-    y_true = []
-    y_pred = []
-
-    print("Predictions start....")
-
-    for true_label, sequences_list in classifier.test_data.items():
-        if not sequences_list:
-            continue
-
-        predictions = classifier.predict(sequences_list)
-        y_true.extend([true_label] * len(sequences_list))
-        y_pred.extend(predictions)
 
     # Metriken
     genauigkeit= accuracy_score(y_true, y_pred)
@@ -211,7 +203,7 @@ def evaluate_classifier(model_path, test_data_path):
     sns.heatmap(matrix, annot=True, fmt='d', cmap='Blues',
                 xticklabels=alle_klassen, yticklabels=alle_klassen)
 
-    plt.title(f'Confusion Matrix\n(Genauigkeit: {genauigkeit:.2%})', fontsize=16)
+    plt.title(f'Confusion Matrix (Cross-Validation)\n(Genauigkeit: {genauigkeit:.2%})', fontsize=16)
     plt.ylabel('Wahre Geste', fontsize=12)
     plt.xlabel('Vorausgesagte Geste', fontsize=12)
 
@@ -222,10 +214,9 @@ def evaluate_classifier(model_path, test_data_path):
 
 
 if __name__ == "__main__":
-    mein_modell = "trained_models/hmm_models.pkl"
     meine_testdaten = "test_data/test_data.pkl"
 
-    evaluate_classifier(mein_modell, meine_testdaten)
+    evaluate_classifier(meine_testdaten)
 
 
 def replay_recordings():

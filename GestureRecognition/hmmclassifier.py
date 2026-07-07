@@ -1,6 +1,5 @@
 import os
 import pickle
-import random
 import numpy as np
 from hmmlearn import hmm
 
@@ -98,12 +97,16 @@ class HMMClassifier:
             self.test_data = pickle.load(f)
         return self
 
-    def _extract_sequences_from_folder(self, ordner_pfad):
+    def _extract_labeled_sequences(self, ordner_pfad):
         """
-        Hilfsfunktion: Holt aus allen .pkl Dateien eines Ordners die längsten Trajektorien.
+        Hilfsfunktion: Holt aus allen .pkl Dateien eines Ordners die längsten
+        Trajektorien, zusammen mit dem Dateinamen (ohne Endung).
+
+        Der Dateiname wird für die Cross-Validation gebraucht, um künstliche
+        Varianten einer Test-Aufnahme sauber vom Training auszuschließen.
         """
-        sequenzen = []
-        for dateiname in os.listdir(ordner_pfad):
+        ergebnisse = []
+        for dateiname in sorted(os.listdir(ordner_pfad)):
             if not dateiname.endswith(".pkl"):
                 continue
 
@@ -130,11 +133,124 @@ class HMMClassifier:
                     beste_trajektorie = daten
 
             if beste_trajektorie is not None:
-                sequenzen.append(beste_trajektorie)
+                stem = os.path.splitext(dateiname)[0]
+                ergebnisse.append((stem, beste_trajektorie))
 
-        return sequenzen
+        return ergebnisse
 
-    def fit(self, data_directory, test_size=0.2):
+    def _extract_sequences_from_folder(self, ordner_pfad):
+        """
+        Hilfsfunktion: Holt aus allen .pkl Dateien eines Ordners die längsten Trajektorien.
+        """
+        return [traj for _, traj in self._extract_labeled_sequences(ordner_pfad)]
+
+    def cross_validate(self, data_directory, augmented_directory=None, n_splits=5, verbose=True):
+        """
+        Schätzt die Klassifikationsgüte per K-Fold-Cross-Validation über die
+        echten Aufnahmen jeder Klasse, statt sich auf einen einzelnen kleinen
+        Testsplit zu verlassen (bei 10 Aufnahmen/Klasse sind das sonst nur
+        2 Testsequenzen pro Klasse).
+
+        Jede echte Aufnahme wird dabei genau einmal getestet. Künstliche
+        Varianten einer Test-Aufnahme werden im jeweiligen Fold vom Training
+        ausgeschlossen, damit keine Information aus der Test-Aufnahme über
+        ihre eigenen augmentierten Kopien ins Training durchsickert.
+
+        Parameters
+        ----------
+        data_directory : str
+            Ordner mit den echten Aufnahmen (``<data_directory>/<Label>/*.pkl``).
+        augmented_directory : str, optional
+            Ordner mit künstlichen Aufnahmen im selben Format.
+        n_splits : int
+            Anzahl der Folds. Jede Klasse braucht mindestens ``n_splits`` echte Aufnahmen.
+
+        Returns
+        -------
+        dict
+            ``{"accuracy": float, "y_true": list, "y_pred": list}``
+        """
+        from sklearn.model_selection import KFold
+
+        ordner_liste = [d for d in os.listdir(data_directory) if os.path.isdir(os.path.join(data_directory, d))]
+
+        per_label = {}
+        for label in sorted(ordner_liste):
+            labeled = self._extract_labeled_sequences(os.path.join(data_directory, label))
+            if len(labeled) < n_splits:
+                print(f"  -> Zu wenig Daten für Klasse '{label}' (braucht mind. {n_splits}). Überspringe.")
+                continue
+
+            aug_by_origin = {}
+            if augmented_directory is not None:
+                aug_pfad = os.path.join(augmented_directory, label)
+                if os.path.isdir(aug_pfad):
+                    for stem, traj in self._extract_labeled_sequences(aug_pfad):
+                        origin = stem.rsplit("_aug", 1)[0]
+                        aug_by_origin.setdefault(origin, []).append(traj)
+
+            per_label[label] = (labeled, aug_by_origin)
+
+        classes = sorted(per_label.keys())
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=self.random_state)
+        label_folds = {label: list(kf.split(labeled)) for label, (labeled, _) in per_label.items()}
+
+        y_true, y_pred = [], []
+
+        for fold_idx in range(n_splits):
+            fold_models = {}
+
+            for label in classes:
+                labeled, aug_by_origin = per_label[label]
+                train_idx, test_idx = label_folds[label][fold_idx]
+
+                train_seqs = [labeled[i][1] for i in train_idx]
+                for i in train_idx:
+                    train_seqs.extend(aug_by_origin.get(labeled[i][0], []))
+
+                model = hmm.GaussianHMM(
+                    n_components=self.n_components,
+                    covariance_type="diag",
+                    n_iter=self.n_iter,
+                    random_state=self.random_state,
+                )
+                X_train = np.vstack(train_seqs)
+                lengths_train = [len(seq) for seq in train_seqs]
+                model.fit(X_train, lengths_train)
+
+                fold_models[label] = (model, [labeled[i][1] for i in test_idx])
+
+            for label in classes:
+                _, test_trajs = fold_models[label]
+                for traj in test_trajs:
+                    scores = []
+                    for other_label in classes:
+                        other_model, _ = fold_models[other_label]
+                        try:
+                            scores.append(other_model.score(traj))
+                        except Exception:
+                            scores.append(-float("inf"))
+                    y_true.append(label)
+                    y_pred.append(classes[int(np.argmax(scores))])
+
+            if verbose:
+                print(f"Fold {fold_idx + 1}/{n_splits} abgeschlossen.")
+
+        accuracy = float(np.mean([t == p for t, p in zip(y_true, y_pred)])) if y_true else 0.0
+
+        if verbose:
+            print(
+                f"\nCross-Validation Accuracy ({n_splits}-fach): {accuracy:.2%} "
+                f"({len(y_true)} echte Testsequenzen insgesamt, jede genau einmal getestet)"
+            )
+
+        cv_results = {"accuracy": accuracy, "y_true": y_true, "y_pred": y_pred}
+        # in self.test_data ablegen, damit save_test_data()/evaluate_classifier()
+        # die Cross-Validation-Ergebnisse persistieren bzw. auswerten können
+        self.test_data = cv_results
+        return cv_results
+
+    def fit(self, data_directory, augmented_directory=None):
         """
         TODO: Trainiere den Klassifikator
 
@@ -182,23 +298,24 @@ class HMMClassifier:
 
         for label in self.classes_:
             ordner_pfad = os.path.join(data_directory, label)
-            sequenzen = self._extract_sequences_from_folder(ordner_pfad)
+            train_seqs = self._extract_sequences_from_folder(ordner_pfad)
 
-            if len(sequenzen) < 3:
+            if len(train_seqs) < 3:
                 print(f"  -> Zu wenig Daten für Klasse '{label}'. Überspringe.")
                 continue
-            random.seed(self.random_state)
-            random.shuffle(sequenzen)
-            split_idx = int(len(sequenzen) * (1 - test_size))
 
-            train_seqs = sequenzen[:split_idx]
-            test_seqs = sequenzen[split_idx:]
-            self.test_data[label] = test_seqs
+            # Finales Modell nutzt alle echten Aufnahmen (kein Split mehr),
+            # die Genauigkeit wird stattdessen separat per cross_validate() geschätzt
+            if augmented_directory is not None:
+                aug_ordner_pfad = os.path.join(augmented_directory, label)
+                if os.path.isdir(aug_ordner_pfad):
+                    aug_sequenzen = self._extract_sequences_from_folder(aug_ordner_pfad)
+                    train_seqs = train_seqs + aug_sequenzen
 
             X_train = np.vstack(train_seqs)
             lengths_train = [len(seq) for seq in train_seqs]
 
-            print(f"  -> Trainiere '{label}': {len(train_seqs)} Train, {len(test_seqs)} Test.")
+            print(f"  -> Trainiere '{label}': {len(train_seqs)} Sequenzen.")
 
             # Modell initialisieren und trainieren
             model = hmm.GaussianHMM(
@@ -318,8 +435,15 @@ class HMMClassifier:
         return predictions
 
 if __name__ == "__main__":
-    daten_pfad = r"C:\Users\Evran\GestureRecognitionMPT\recordings"
+    daten_pfad = r"recordings"
+    augmented_pfad = r"recordings_augmented"
     classifier = HMMClassifier(n_components=5)
-    classifier.fit(data_directory=daten_pfad)
-    classifier.save_model("trained_models/hmm_models.pkl")
+
+    # Belastbare Genauigkeitsschätzung: jede echte Aufnahme wird einmal
+    # getestet, statt nur 2 von 10 Aufnahmen pro Klasse (siehe fit()).
+    classifier.cross_validate(data_directory=daten_pfad, augmented_directory=augmented_pfad, n_splits=5)
+
+    # Finales Modell auf allen Daten trainieren und speichern
+    classifier.fit(data_directory=daten_pfad, augmented_directory=augmented_pfad)
+    classifier.save_model("data/hmm_model.pkl")
     classifier.save_test_data("test_data/test_data.pkl")

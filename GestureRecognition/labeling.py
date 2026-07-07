@@ -3,11 +3,16 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 
-RAW_DATA_DIR = Path("data/raw")
+from GestureRecognition.augmentation import augment_dataset
+
+RAW_DATA_DIR = Path("recordings")
+AUGMENTED_DATA_DIR = Path("recordings_augmented")
+N_AUGMENTATIONS_PER_RECORDING = 5
 
 def get_key():
     try:
@@ -26,7 +31,14 @@ def get_key():
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
-def data_labeling(times: int, label: str):
+
+def _next_sequence_number(label_dir: Path) -> int:
+    """Fortlaufende Nummer für die nächste Aufnahme dieses Labels (über alle Sessions hinweg)."""
+    existing = [p for p in label_dir.glob("*.pkl") if not p.name.startswith("_temp_")]
+    return len(existing) + 1
+
+
+def data_labeling(times: int, label: str, kuerzel: str = None):
     """
     TODO: data_labeling: Datenerfassung für Gesten (SignalHub)
 
@@ -98,6 +110,10 @@ def data_labeling(times: int, label: str):
     label : str
         Name der Geste / Klasse.
         Kann ebenfalls frei gestaltet werden (z. B. dynamische Labels, mehrere Klassen gleichzeitig).
+
+    kuerzel : str, optional
+        Kürzel der aufnehmenden Person (z. B. Initialen), wird in den
+        Dateinamen aufgenommen, um Aufnahmen später zuordnen zu können.
     """
     label_dir = RAW_DATA_DIR / label
     label_dir.mkdir(parents=True, exist_ok=True)
@@ -110,14 +126,20 @@ def data_labeling(times: int, label: str):
     while saved < times:
         timestamp = int(time.time() * 1000)
         temp_path = label_dir / f"_temp_{timestamp}.pkl"
-        final_path = label_dir / f"{label}_{timestamp}.pkl"
+
+        date_str = datetime.now().strftime("%d-%m-%Y")
+        seq = _next_sequence_number(label_dir)
+        name_parts = [label] + ([kuerzel] if kuerzel else []) + [date_str, f"{seq:02d}"]
+        final_path = label_dir / f"{'_'.join(name_parts)}.pkl"
 
         process = subprocess.Popen(
             [
-                "SignalHub",
+                sys.executable,
+                "-m",
+                "GestureRecognition.demo",
                 "--mode",
                 "record",
-                "--recorder",
+                "--recorder.file",
                 str(temp_path),
             ]
         )
@@ -148,6 +170,14 @@ def data_labeling(times: int, label: str):
                 temp_path.unlink()
             print("Verworfen.")
 
+    if saved > 0:
+        print(f"\nAugmentiere {saved} neue Aufnahme(n) für Klasse '{label}' ...")
+        augment_dataset(
+            input_dir=str(RAW_DATA_DIR),
+            output_dir=str(AUGMENTED_DATA_DIR),
+            n_per_recording=N_AUGMENTATIONS_PER_RECORDING,
+            labels=label,
+        )
 
 
 def load_recording(path):
@@ -303,3 +333,15 @@ def dataset_building(output_path):
     print(f"Labels: {dataset['labels']}")
 
     return dataset
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Nimmt Aufnahmen für eine Geste auf.")
+    parser.add_argument("label", help="Name der Geste/Klasse, z.B. D")
+    parser.add_argument("--times", type=int, default=10, help="Anzahl der Aufnahmen (Standard: 10)")
+    parser.add_argument("--kuerzel", type=str, default=None, help="Kürzel der aufnehmenden Person, z.B. MK")
+    args = parser.parse_args()
+
+    data_labeling(times=args.times, label=args.label, kuerzel=args.kuerzel)

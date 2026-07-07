@@ -12,7 +12,7 @@ class HMMModule(Module):
     visualisiert das Ergebnis.
     """
 
-    def __init__(self, outputSignal="markov", model_path="data/hmm_model.pickle", **kwargs):
+    def __init__(self, outputSignal="markov", model_path="data/hmm_model.pkl", **kwargs):
         self.outputSignal = outputSignal
         self.model_path   = model_path
 
@@ -24,7 +24,8 @@ class HMMModule(Module):
 
     def start(self, data: dict) -> dict:
         model_path  = get_nested_key('config.hmm_model_path', data, default=self.model_path)
-        self.model  = HMMClassifier.load(model_path)
+        self.model = HMMClassifier()
+        self.model.load_model(model_path)
         self.last_result = None 
         return {}
 
@@ -34,8 +35,8 @@ class HMMModule(Module):
         if trajectory is not None and len(trajectory) > 0:
             
             seq        = np.array(trajectory, dtype=np.float32)
-            best_label = self.model.predict_single(seq)
-            scores_arr = self.model.decision_function(seq, [len(seq)])[0]
+            best_label = self.model.predict([seq])[0]
+            scores_arr = self.model.decision_function([seq])[0]
             best_score = float(np.max(scores_arr))
 
             self.last_result = {

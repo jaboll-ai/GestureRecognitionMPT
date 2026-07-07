@@ -115,7 +115,8 @@ class HandDetector(Module):
             outputSchema = {
                 'type' : 'object',
                 'properties': {
-                    outputSignal : {}
+                    outputSignal : {},
+                    'galy': {} 
 
                 }
             }
