@@ -18,7 +18,7 @@ class HMMModule(Module):
 
         super().__init__(
             name         = "hiddenmarkov",
-            inputSignals = ["config", "preprocessor"],
+            inputSignals = ["config", "preprocessor", "trigger"],
             outputSchema = {"type": "object", "properties": {outputSignal: {}}},
         )
 
@@ -30,10 +30,18 @@ class HMMModule(Module):
         return {}
 
     def step(self, data: dict) -> dict:
+        # Optionales Trigger-Signal (GestureTrigger): nur vorhanden, wenn
+        # das Programm mit --trigger gestartet wurde. Ohne Trigger-Modul
+        # wird wie bisher jeden Frame neu vorhergesagt.
+        trigger = data.get("trigger")
+        gated = trigger is not None
+        recording = trigger.get("recording", False) if gated else False
+        should_predict = trigger.get("predict_now", False) if gated else True
+
         trajectory = get_nested_key('preprocessor', data)
 
-        if trajectory is not None and len(trajectory) > 0:
-            
+        if should_predict and trajectory is not None and len(trajectory) > 0:
+
             seq        = np.array(trajectory, dtype=np.float32)
             best_label = self.model.predict([seq])[0]
             scores_arr = self.model.decision_function([seq])[0]
@@ -46,7 +54,7 @@ class HMMModule(Module):
             }
 
         # Nichts zu zeigen
-        if self.last_result is None:
+        if self.last_result is None and not gated:
             return {}
 
         # Letztes Ergebnis weiter anzeigen
@@ -56,11 +64,18 @@ class HMMModule(Module):
         galy = GALY()
         galy.layer("hmm")
 
+        if self.last_result is not None:
+            text, color = f"{self.last_result['label']}  {self.last_result['score']:.2f}", bgr("#AD0303")
+        elif recording:
+            text, color = "Aufnahme laeuft... ('a' zum Erkennen)", bgr("#0080FF")
+        else:
+            text, color = "Bereit - 'a' druecken zum Starten", bgr("#AAAAAA")
+
         galy.putText(
-            f"{self.last_result['label']}  {self.last_result['score']:.2f}",
+            text,
             (int(width * 0.05), int(height * 0.1)),
-            fontScale = 1.5,
-            color     = bgr("#AD0303"),
+            fontScale = 1.3,
+            color     = color,
         )
 
         # for i, (label, score) in enumerate(self.last_result["scores"].items()):

@@ -93,6 +93,60 @@ def augment_trajectory(trajectory, rng):
     return traj.astype(np.float32)
 
 
+def augment_recording(file_path, output_dir="recordings_augmented", n_per_recording=5, rng=None, verbose=True):
+    """
+    Augmentiert genau eine Aufnahme, statt den kompletten Label-Ordner neu
+    zu verarbeiten - gedacht für den Aufruf direkt nach dem Speichern einer
+    einzelnen neuen Aufnahme (z. B. aus labeling.py oder GestureRecorder).
+
+    Das Label wird aus dem übergeordneten Ordnernamen abgeleitet
+    (``recordings/<Label>/<Datei>.pkl``).
+
+    Parameters
+    ----------
+    rng : int, np.random.Generator oder None
+        Zufallsquelle. ``None`` (Standard) erzeugt bei jedem Aufruf frische,
+        unabhängige Zufallszahlen - passend für einzelne, interaktive Aufrufe.
+
+    Returns
+    -------
+    int
+        Anzahl der erzeugten künstlichen Aufnahmen (0 bei fehlender Trajektorie).
+    """
+    file_path = Path(file_path)
+    output_dir = Path(output_dir)
+
+    if not isinstance(rng, np.random.Generator):
+        rng = np.random.default_rng(rng)
+
+    with open(file_path, "rb") as f:
+        recording = pickle.load(f)
+
+    trajectory = extract_trajectory(recording)
+    if trajectory is None:
+        if verbose:
+            print(f"Übersprungen (keine Trajektorie): {file_path}")
+        return 0
+
+    out_label_dir = output_dir / file_path.parent.name
+    out_label_dir.mkdir(parents=True, exist_ok=True)
+
+    created = 0
+    for i in range(n_per_recording):
+        synthetic_trajectory = augment_trajectory(trajectory, rng)
+        synthetic_recording = {"preprocessor": [{"preprocessor": synthetic_trajectory}]}
+
+        out_path = out_label_dir / f"{file_path.stem}_aug{i + 1}.pkl"
+        with open(out_path, "wb") as f:
+            pickle.dump(synthetic_recording, f)
+
+        created += 1
+
+    if verbose:
+        print(f"{created} künstliche Aufnahmen für {file_path.name} erzeugt")
+    return created
+
+
 def augment_dataset(input_dir="recordings", output_dir="recordings_augmented", n_per_recording=5, seed=42, labels=None):
     """
     Liest alle Aufnahmen aus ``input_dir/<Label>/*.pkl``, erzeugt pro Aufnahme
@@ -130,34 +184,22 @@ def augment_dataset(input_dir="recordings", output_dir="recordings_augmented", n
             continue
 
         label = label_dir.name
-        out_label_dir = output_dir / label
-
         label_created = 0
 
         for file_path in sorted(label_dir.glob("*.pkl")):
             if file_path.name.startswith("_temp_"):
                 continue
 
-            with open(file_path, "rb") as f:
-                recording = pickle.load(f)
+            created = augment_recording(
+                file_path, output_dir=output_dir, n_per_recording=n_per_recording, rng=rng, verbose=False
+            )
 
-            trajectory = extract_trajectory(recording)
-            if trajectory is None:
+            if created == 0:
                 print(f"Übersprungen (keine Trajektorie): {file_path}")
                 total_skipped += 1
                 continue
 
-            out_label_dir.mkdir(parents=True, exist_ok=True)
-
-            for i in range(n_per_recording):
-                synthetic_trajectory = augment_trajectory(trajectory, rng)
-                synthetic_recording = {"preprocessor": [{"preprocessor": synthetic_trajectory}]}
-
-                out_path = out_label_dir / f"{file_path.stem}_aug{i + 1}.pkl"
-                with open(out_path, "wb") as f:
-                    pickle.dump(synthetic_recording, f)
-
-                label_created += 1
+            label_created += created
 
         total_created += label_created
         print(f"{label}: {label_created} künstliche Aufnahmen erzeugt")

@@ -61,7 +61,7 @@ class Preprocessor(Module):
         self.outputSignal = outputSignal
 
         super().__init__(
-            inputSignals=["config", "detector"],
+            inputSignals=["config", "detector", "trigger"],
             outputSchema={"type": "object",
                           "properties": {outputSignal: {}}},
             name="preprocessor",
@@ -116,6 +116,7 @@ class Preprocessor(Module):
         self.max_lost_frames = get_nested_key("preprocessor.max_lost",data,default=10)
         self.trajectory = deque(maxlen=self.max_points)
         self.lost_frames = 0
+        self._was_recording = False
 
         return {}
       
@@ -178,6 +179,21 @@ class Preprocessor(Module):
 
             ``return {outputSignal: trajectory}``
         """
+        # Optionales Trigger-Signal (GestureTrigger): nur vorhanden, wenn
+        # das Programm mit --trigger gestartet wurde. Ohne Trigger-Modul
+        # verhält sich der Preprocessor wie bisher (durchgehendes Tracking).
+        trigger = data.get("trigger")
+        if trigger is not None:
+            recording = trigger.get("recording", False)
+
+            if recording and not self._was_recording:
+                self.trajectory.clear()
+                self.lost_frames = 0
+            self._was_recording = recording
+
+            if not recording:
+                return {self.outputSignal: None}
+
         detector = data.get("detector")
 
         if detector is None or not detector.hand_landmarks:
