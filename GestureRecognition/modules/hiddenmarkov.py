@@ -58,8 +58,8 @@ class HMMModule(Module):
             return {}
 
         # Letztes Ergebnis weiter anzeigen
-        width  = get_nested_key('config.width',  data, default=1280)
-        height = get_nested_key('config.height', data, default=720)
+        width  = get_nested_key('config.webcam.width',  data, default=1280)
+        height = get_nested_key('config.webcam.height', data, default=720)
 
         galy = GALY()
         galy.layer("hmm")

@@ -10,8 +10,7 @@ from SignalHub import GALY, bgr, get_nested_key, Module
 mp_hand = mp.tasks.vision.HandLandmarksConnections
 
 
-def draw_hand_landmarks(hand_landmarks, galy: GALY):
-    height, width = 720, 1280
+def draw_hand_landmarks(hand_landmarks, galy: GALY, width=1280, height=720):
     lm = {
         "thumb":         {"color": bgr("#0000FF")},
         "index_finger":  {"color": bgr("#00FF00")},
@@ -232,13 +231,16 @@ class HandDetector(Module):
 
         results = self.detector.detect(mp_image) # detection of landmarks
 
+        width  = get_nested_key('config.webcam.width',  data, default=1280)
+        height = get_nested_key('config.webcam.height', data, default=720)
+
         # landmarks visualisieren
         galy = GALY()
         # galy.blit("webcam", (0, 0))
-        galy.layer("landmarks") 
+        galy.layer("landmarks")
         if results.hand_landmarks:
             for hand_landmarks in results.hand_landmarks:
-                draw_hand_landmarks(hand_landmarks, galy)
+                draw_hand_landmarks(hand_landmarks, galy, width, height)
 
         return {self.outputSignal: results, "galy": galy}
 
