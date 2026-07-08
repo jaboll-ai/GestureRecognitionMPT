@@ -1,6 +1,6 @@
 import argparse
 
-from GestureRecognition import run
+from GestureRecognition.demo import run
 
 parser = argparse.ArgumentParser("GestureRecognition")
 

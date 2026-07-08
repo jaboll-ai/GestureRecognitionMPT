@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from fontTools.misc.classifyTools import Classifier
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 def visualize_dataset(label_pfad, label_name):
     """
@@ -195,9 +195,24 @@ def evaluate_classifier(test_data_path):
     genauigkeit= accuracy_score(y_true, y_pred)
     print(f"Klassifikationsgenauigkeit (Accuracy): {genauigkeit:.2%} ({genauigkeit * 100:.1f}%)")
 
-    # 5. Confusion Matrix zeichnen
     alle_klassen = sorted(list(set(y_true + y_pred)))
     matrix = confusion_matrix(y_true, y_pred, labels=alle_klassen)
+
+    print("\nPrecision / Recall / F1 pro Klasse:")
+    print(classification_report(y_true, y_pred, labels=alle_klassen, zero_division=0))
+
+    print("Größte Verwechslungen (wahr -> vorhergesagt, Anzahl):")
+    verwechslungen = []
+    for i, wahres_label in enumerate(alle_klassen):
+        for j, vorhergesagtes_label in enumerate(alle_klassen):
+            if i != j and matrix[i, j] > 0:
+                verwechslungen.append((matrix[i, j], wahres_label, vorhergesagtes_label))
+    verwechslungen.sort(reverse=True)
+    for anzahl, wahres_label, vorhergesagtes_label in verwechslungen[:15]:
+        print(f"  {wahres_label} -> {vorhergesagtes_label}: {anzahl}x")
+    print()
+
+    # Confusion Matrix zeichnen
 
     plt.figure(figsize=(10, 8))
     sns.heatmap(matrix, annot=True, fmt='d', cmap='Blues',
