@@ -1,4 +1,44 @@
-def data_labeling(times: int, label: str):
+import pickle
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+
+from GestureRecognition.augmentation import augment_recording
+
+RAW_DATA_DIR = Path("recordings")
+AUGMENTED_DATA_DIR = Path("recordings_augmented")
+N_AUGMENTATIONS_PER_RECORDING = 5
+
+def get_key():
+    try:
+        import msvcrt
+        return msvcrt.getch().decode(errors="ignore")
+    except ImportError:
+        import tty
+        import termios
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+
+        try:
+            tty.setraw(fd)
+            return sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _next_sequence_number(label_dir: Path) -> int:
+    """Fortlaufende Nummer für die nächste Aufnahme dieses Labels (über alle Sessions hinweg)."""
+    existing = [p for p in label_dir.glob("*.pkl") if not p.name.startswith("_temp_")]
+    return len(existing) + 1
+
+
+def data_labeling(times: int, label: str, kuerzel: str = None):
     """
     TODO: data_labeling: Datenerfassung für Gesten (SignalHub)
 
@@ -70,11 +110,110 @@ def data_labeling(times: int, label: str):
     label : str
         Name der Geste / Klasse.
         Kann ebenfalls frei gestaltet werden (z. B. dynamische Labels, mehrere Klassen gleichzeitig).
+
+    kuerzel : str, optional
+        Kürzel der aufnehmenden Person (z. B. Initialen), wird in den
+        Dateinamen aufgenommen, um Aufnahmen später zuordnen zu können.
     """
-    pass
+    label_dir = RAW_DATA_DIR / label
+    label_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Labeling für Klasse: {label}")
+    print("ESC = speichern | andere Taste = verwerfen | q = beenden")
+
+    saved = 0
+    saved_paths = []
+
+    while saved < times:
+        timestamp = int(time.time() * 1000)
+        temp_path = label_dir / f"_temp_{timestamp}.pkl"
+
+        date_str = datetime.now().strftime("%d-%m-%Y")
+        seq = _next_sequence_number(label_dir)
+        name_parts = [label] + ([kuerzel] if kuerzel else []) + [date_str, f"{seq:02d}"]
+        final_path = label_dir / f"{'_'.join(name_parts)}.pkl"
+
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "GestureRecognition.demo",
+                "--mode",
+                "record",
+                "--recorder.file",
+                str(temp_path),
+            ]
+        )
+
+        print(f"\nAufnahme {saved + 1}/{times}")
+        print("Geste ausführen, dann Taste drücken.")
+
+        key = get_key()
+
+        process.terminate()
+        process.wait()
+
+        if key == "q":
+            if temp_path.exists():
+                temp_path.unlink()
+            print("Beendet.")
+            break
+
+        if key == "\x1b":
+            if temp_path.exists():
+                shutil.move(str(temp_path), str(final_path))
+                saved += 1
+                saved_paths.append(final_path)
+                print(f"Gespeichert: {final_path}")
+            else:
+                print("Keine Aufnahme gefunden.")
+        else:
+            if temp_path.exists():
+                temp_path.unlink()
+            print("Verworfen.")
+
+    if saved_paths:
+        print(f"\nAugmentiere {saved} neue Aufnahme(n) für Klasse '{label}' ...")
+        for path in saved_paths:
+            augment_recording(
+                path,
+                output_dir=str(AUGMENTED_DATA_DIR),
+                n_per_recording=N_AUGMENTATIONS_PER_RECORDING,
+            )
 
 
+def load_recording(path):
+    with open(path, "rb") as f:
+        return pickle.load(f)
+    
+    
+def preprocess_sequence(recording):
+    """
+    Erwartete Recording-Struktur:
 
+    recording["detector"] = Liste von Frames
+    """
+    try:
+        frames = recording["preprocessor"]
+    except (KeyError, TypeError):
+        return None
+
+    sequence = []
+
+    for frame in frames:
+        if frame is None:
+            continue
+
+        arr = np.asarray(frame, dtype=np.float32)
+
+        if arr.size == 0:
+            continue
+
+        sequence.append(arr)
+
+    if len(sequence) == 0:
+        return None
+    return sequence[-1]
 
 def dataset_building(output_path):
     """
@@ -145,4 +284,66 @@ def dataset_building(output_path):
     output_path : Path or str
         Zielpfad für den erzeugten Trainingsdatensatz.
     """
-    pass
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not RAW_DATA_DIR.exists():
+        print(f"Trainingsordner existiert nicht: {RAW_DATA_DIR}")
+        return None
+
+    X = []
+    y = []
+    lengths = []
+
+    for label_dir in RAW_DATA_DIR.iterdir():
+        if not label_dir.is_dir():
+            continue
+
+        label = label_dir.name
+
+        for file_path in label_dir.glob("*.pkl"):
+            if file_path.name.startswith("_temp_"):
+                continue
+
+            recording = load_recording(file_path)
+            sequence = preprocess_sequence(recording)
+
+            if sequence is None:
+                print(f"Übersprungen: {file_path}")
+                continue
+
+            if len(sequence) < 5:
+                print(f"Zu kurz: {file_path}")
+                continue
+
+            X.append(sequence)
+            y.append(label)
+            lengths.append(len(sequence))
+
+    dataset = {
+        "X": X,
+        "y": y,
+        "lengths": lengths,
+        "labels": sorted(set(y)),
+    }
+
+    with open(output_path, "wb") as f:
+        pickle.dump(dataset, f)
+
+    print(f"Dataset gespeichert unter: {output_path}")
+    print(f"Sequenzen: {len(X)}")
+    print(f"Labels: {dataset['labels']}")
+
+    return dataset
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Nimmt Aufnahmen für eine Geste auf.")
+    parser.add_argument("label", help="Name der Geste/Klasse, z.B. D")
+    parser.add_argument("--times", type=int, default=10, help="Anzahl der Aufnahmen (Standard: 10)")
+    parser.add_argument("--kuerzel", type=str, default=None, help="Kürzel der aufnehmenden Person, z.B. MK")
+    args = parser.parse_args()
+
+    data_labeling(times=args.times, label=args.label, kuerzel=args.kuerzel)
