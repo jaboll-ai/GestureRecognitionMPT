@@ -76,8 +76,8 @@ class GestureRecorder(Module):
             else:
                 print("Keine verwertbare Trajektorie - verworfen.")
 
-        width  = get_nested_key("config.width",  data, default=1280)
-        height = get_nested_key("config.height", data, default=720)
+        width  = get_nested_key("config.webcam.width",  data, default=1280)
+        height = get_nested_key("config.webcam.height", data, default=720)
 
         if recording:
             text, color = "Aufnahme laeuft... ('a' zum Speichern)", bgr("#0080FF")

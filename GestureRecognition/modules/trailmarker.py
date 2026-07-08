@@ -37,21 +37,22 @@ class TrailMarker(Module):
             "trailmarker.maxLostFrames", config, 10
         )
 
+        self.width  = get_nested_key("webcam.width",  config, 1280)
+        self.height = get_nested_key("webcam.height", config, 720)
+
         self.trail = deque(maxlen=self.max_points)
         self.lost_frames = 0
 
         return {}
 
     def _draw_trail(self, galy):
-        # gleiche Pixelauflösung wie handdetector.draw_hand_landmarks
-        width, height = 1280, 720
         galy.layer("trail")
         points = list(self.trail)
         for i in range(len(points) - 1):
             x1, y1 = points[i]
             x2, y2 = points[i + 1]
-            pt1 = (int(x1 * width), int(y1 * height))
-            pt2 = (int(x2 * width), int(y2 * height))
+            pt1 = (int(x1 * self.width), int(y1 * self.height))
+            pt2 = (int(x2 * self.width), int(y2 * self.height))
             galy.line(pt1, pt2, (0, 255, 255), 2)
 
     def step(self, data):
