@@ -1,149 +1,82 @@
-def visualize_dataset():
+import os
+import glob
+import numpy as np
+import matplotlib.pyplot as plt
+
+def visualize_dataset(label, start, stop, dataset_dir="dataset"):
     """
-    TODO: Visualisierung des eigenen Datensatzes
-
-    Ziel:
-    -----
-    Entwickle eine Möglichkeit, deinen aufgenommenen Datensatz visuell zu
-    inspizieren und zu verstehen.
-
-    Warum ist das wichtig?
-    ----------------------
-    - Du musst nachvollziehen können, was dein Modell eigentlich „sieht“
-    - Fehler im Datensatz lassen sich visuell oft sofort erkennen
-    - Qualität der Daten ist entscheidend für die Modellperformance
-
-    Anforderungen / Ideen:
-    ----------------------
-    - Lade deinen Trainingsdatensatz
-    - Visualisiere mehrere Sequenzen pro Klasse
-    - Stelle sicher, dass:
-        - unterschiedliche Gesten klar unterscheidbar sind
-        - Sequenzen sinnvoll aussehen (keine Ausreißer, keine leeren Daten)
-
-    .. tip::
-       Ein einfacher Ansatz:
-         - Plotte Trajektorien (z. B. x/y-Koordinaten)
-         - Zeige mehrere Beispiele pro Klasse übereinander
-
-    .. note::
-       Du kannst selbst entscheiden:
-         - Wie viele Sequenzen du anzeigst
-         - Welche Features du visualisierst
-         - Ob du interaktive Elemente einbaust
-
-    .. tip::
-       Interaktivität (z. B. Klick auf eine Sequenz) kann hilfreich sein,
-       um einzelne Beispiele genauer zu untersuchen.
-
-    Abgabe:
-    -------
-    - Du musst in der Lage sein, deinen Datensatz visuell zu präsentieren
-    - Du solltest erklären können:
-        - Wie unterscheiden sich die Klassen?
-        - Gibt es problematische Beispiele?
-
-    Erweiterung (optional):
-    -----------------------
-    - Mittelwerte oder typische Sequenzen pro Klasse darstellen
-    - Ausreißer automatisch erkennen
+    Visualisiert gezielt einen Buchstaben und einen bestimmten Bereich von Aufnahmen.
     """
-    pass
+    search_path = os.path.join(dataset_dir, label, "*.npy")
+    files = sorted(glob.glob(search_path))
+    
+    if not files:
+        print(f"⚠️ Keine Daten für den Buchstaben '{label}' im Ordner '{dataset_dir}' gefunden!")
+        return
 
-def evaluate_classifier():
+    selected_files = files[start:stop]
+
+    plt.figure(figsize=(10, 6))
+    
+    for idx, f in enumerate(selected_files):
+        data = np.load(f)
+        
+        current_index = start + idx
+        plt.plot(data[:, 0], data[:, 1], alpha=0.7, 
+                 label=f"{label} (Aufnahme {current_index})")
+
+    plt.title(f"Trajektorien für Klasse '{label}' (Aufnahmen {start} bis {stop-1})")
+    plt.xlabel("X-Koordinate")
+    plt.ylabel("Y-Koordinate")
+    
+    plt.gca().invert_yaxis() 
+    plt.legend()
+    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.show()
+
+
+def replay_recordings(dataset_dir="dataset", label="P", count=0):
     """
-    TODO: Evaluation deines Klassifikators
-
-    Ziel:
-    -----
-    Implementiere eine sinnvolle Auswertung deines Modells auf Testdaten.
-
-    Warum ist das wichtig?
-    ----------------------
-    - Du brauchst objektive Metriken für die Qualität deines Modells
-    - Training allein reicht nicht, entscheidend ist die Generalisierung
-
-    Anforderungen / Ideen:
-    ----------------------
-    - Lade ein trainiertes Modell
-    - Lade Testdaten (getrennt vom Training!)
-    - Berechne Vorhersagen
-    - Vergleiche Vorhersagen mit Ground Truth
-
-    Metriken:
-    ---------
-    - Klassifikationsgenauigkeit (Accuracy)
-    - Confusion Matrix
-
-    .. tip::
-       Eine Confusion Matrix zeigt dir:
-         - Welche Klassen gut erkannt werden
-         - Wo dein Modell Fehler macht
-
-    .. warning::
-       Testdaten dürfen **nicht** aus dem Training stammen!
-
-    Interpretation:
-    ---------------
-    Du solltest erklären können:
-    - Welche Klassen gut funktionieren
-    - Welche Klassen verwechselt werden
-    - Warum das passieren könnte
-
-    .. note::
-       Schlechte Performance liegt oft an:
-         - schlechten Trainingsdaten
-         - zu wenigen Beispielen
-         - ungeeigneten Features
-
-    Erweiterung (optional):
-    -----------------------
-    - Weitere Metriken (Precision, Recall, F1)
-    - Vergleich verschiedener Modelle
+    Exploration und Replay der aufgenommenen Rohdaten.
+    Passt das Sichtfenster automatisch an die echten Daten an.
     """
-    pass
+    search_path = os.path.join(dataset_dir, label, "*.npy")
+    files = sorted(glob.glob(search_path))
+    
+    if not files:
+        print(f"⚠️ Keine Aufnahmen für '{label}' zum Abspielen gefunden.")
+        return
 
+    print(f"🎬 Starte Replay für Klasse '{label}'. Schließe das Fenster für die nächste Geste...")
+    
+    for f in files[:count]:
+        data = np.load(f)
+            
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.set_title(f"Replay '{label}': {os.path.basename(f)}")
+        
+        x_min, x_max = np.min(data[:, 0]), np.max(data[:, 0])
+        y_min, y_max = np.min(data[:, 1]), np.max(data[:, 1])
+        
+        pad_x = (x_max - x_min) * 0.1 if (x_max - x_min) > 0 else 1
+        pad_y = (y_max - y_min) * 0.1 if (y_max - y_min) > 0 else 1
+        
+        ax.set_xlim(x_min - pad_x, x_max + pad_x)
+        ax.set_ylim(y_min - pad_y, y_max + pad_y)
+        
+        ax.invert_yaxis()
+        ax.grid(True, linestyle="--", alpha=0.5)
+        
+        for i in range(1, len(data) + 1):
+            ax.plot(data[:i, 0], data[:i, 1], color="blue", marker="o", markersize=3, linestyle="-")
+            plt.pause(0.03)
+            
+        plt.show()
 
-def replay_recordings():
-    """
-    TODO: Exploration und Replay der aufgenommenen Rohdaten
+if __name__ == "__main__":
+    print("Starte Datenexploration...")
 
-    Ziel:
-    -----
-    Ermögliche es, aufgenommene Sequenzen erneut abzuspielen
-    und qualitativ zu überprüfen.
+    label = input("Welchen Buchstaben möchtest du anzeigen? ").upper()
 
-    Warum ist das wichtig?
-    ----------------------
-    - Du kannst überprüfen, ob deine Aufnahmen korrekt sind
-    - Fehler in der Datenerfassung werden früh sichtbar
-    - Du entwickelst ein besseres Verständnis für deine Daten
-
-    Anforderungen / Ideen:
-    ----------------------
-    - Lade gespeicherte Aufnahmen
-    - Spiele diese erneut ab (z. B. über SignalHub / Replay-Modus)
-    - Iteriere über verschiedene Labels und Beispiele
-
-    .. tip::
-       Besonders hilfreich:
-         - Vergleiche mehrere Beispiele derselben Klasse
-         - Suche nach inkonsistenten Bewegungen
-
-    .. warning::
-       Schlechte oder inkonsistente Aufnahmen führen fast immer zu
-       schlechten Modellen. Überprüfe deine Daten frühzeitig!
-
-    Abgabe:
-    -------
-    - Du solltest zeigen können, wie deine Daten aussehen (Replay)
-    - Du solltest erklären können:
-        - Welche Beispiele gut sind
-        - Welche problematisch sind
-
-    Erweiterung (optional):
-    -----------------------
-    - Automatisches Filtern schlechter Sequenzen
-    - Kombination mit Visualisierung
-    """
-    pass
+    visualize_dataset(label=label, start=0, stop=4)
+    replay_recordings(label=label, count=2)
